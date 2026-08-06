@@ -87,6 +87,120 @@ TEST(ManagerTest, readXml)
     EXPECT_EQ(678U*1024, book.getSize());
 }
 
+TEST(ManagerTest, readOpdsWithNoEntriesReturnsTrue)
+{
+    auto lib = kiwix::Library::create();
+    kiwix::Manager manager(lib);
+
+    EXPECT_TRUE(manager.readOpds(R"(<feed xmlns="http://www.w3.org/2005/Atom"></feed>)", "http://example.com"));
+    EXPECT_TRUE(lib->getBooksIds().empty());
+}
+
+TEST(ManagerTest, readOpdsWithMalformedInputAddsNoBooks)
+{
+    // The first <entry> is well-formed, but the second's <entry> tag is
+    // never closed, making the feed as a whole malformed - doc.load_buffer()
+    // fails, parseOpdsDom() is never invoked, and no books get added at all
+    // (not even the first, valid entry).
+    auto lib = kiwix::Library::create();
+    kiwix::Manager manager(lib);
+
+    const std::string feed = R"(
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <id>urn:uuid:book1</id>
+          <title>Book One</title>
+        </entry>
+        <entry>
+          <id>urn:uuid:book2</id>
+          <title>Book Two</title>
+      </feed>
+    )";
+
+    EXPECT_FALSE(manager.readOpds(feed, "http://example.com"));
+    EXPECT_TRUE(lib->getBooksIds().empty());
+}
+
+TEST(ManagerTest, readOpdsWithoutSearchMetadata)
+{
+    // strtoull() on the empty string returned for missing <totalResults> /
+    // <startIndex> / <itemsPerPage> elements yields 0 without throwing, so
+    // the try/catch in parseOpdsDom() never actually observes an error here
+    // - m_hasSearchResult ends up true, with all counters at 0.
+    auto lib = kiwix::Library::create();
+    kiwix::Manager manager(lib);
+
+    const std::string feed = R"(
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <id>urn:uuid:book1</id>
+          <title>Book One</title>
+        </entry>
+      </feed>
+    )";
+
+    EXPECT_TRUE(manager.readOpds(feed, "http://example.com"));
+
+    EXPECT_TRUE(manager.m_hasSearchResult);
+    EXPECT_EQ(manager.m_totalBooks, 0U);
+    EXPECT_EQ(manager.m_startIndex, 0U);
+    EXPECT_EQ(manager.m_itemsPerPage, 0U);
+
+    EXPECT_EQ(lib->getBooksIds(), (kiwix::Library::BookIdCollection{"book1"}));
+}
+
+TEST(ManagerTest, readOpdsAddsEntriesAndParsesSearchMetadata)
+{
+    auto lib = kiwix::Library::create();
+    kiwix::Manager manager(lib);
+
+    const std::string feed = R"(
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opds="https://specs.opds.io/opds-1.2">
+  <totalResults>2</totalResults>
+  <startIndex>7</startIndex>
+  <itemsPerPage>100</itemsPerPage>
+  <entry>
+    <id>urn:uuid:book1</id>
+    <title>Book One</title>
+    <link rel="http://opds-spec.org/acquisition/open-access"
+          type="application/x-zim"
+          href="https://example.com/book1.zim"
+          length="111" />
+  </entry>
+  <entry>
+    <id>urn:uuid:book2</id>
+    <title>Book Two</title>
+    <link rel="http://opds-spec.org/acquisition/open-access"
+          type="application/x-zim"
+          href="https://example.com/book2.zim"
+          length="222" />
+  </entry>
+</feed>
+)";
+
+    EXPECT_TRUE(manager.readOpds(feed, "http://example.com"));
+
+    EXPECT_TRUE(manager.m_hasSearchResult);
+    EXPECT_EQ(manager.m_totalBooks, 2U);
+    EXPECT_EQ(manager.m_startIndex, 7U);
+    EXPECT_EQ(manager.m_itemsPerPage, 100U);
+
+    EXPECT_EQ(lib->getBooksIds(), (kiwix::Library::BookIdCollection{"book1", "book2"}));
+
+    kiwix::Book book1 = lib->getBookById("book1");
+    EXPECT_EQ(book1.getTitle(), "Book One");
+    EXPECT_EQ(book1.getUrl(), "https://example.com/book1.zim");
+    // OPDS entries carry no local path at this point (unlike XML's "path"
+    // attribute - see ManagerTest.readXml above): this feed has no
+    // rel="self" link, so the resolved path stays empty and invalid.
+    EXPECT_EQ(book1.getPath(), "");
+    EXPECT_FALSE(book1.isPathValid());
+    // Unlike readXml() (readOnly defaults to true), OPDS-sourced books are
+    // always mutable.
+    EXPECT_FALSE(book1.readOnly());
+}
+
 TEST(Manager, reload)
 {
   auto lib = kiwix::Library::create();
