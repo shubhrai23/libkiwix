@@ -143,7 +143,9 @@ bool Manager::readXml(const std::string& xml,
 
 
 
-bool Manager::parseOpdsDom(const pugi::xml_document& doc, const std::string& urlHost)
+bool Manager::parseOpdsDom(const pugi::xml_document& doc,
+                           const std::string& urlHost,
+                           bool readOnly)
 {
   pugi::xml_node libraryNode = doc.child("feed");
 
@@ -160,7 +162,7 @@ bool Manager::parseOpdsDom(const pugi::xml_document& doc, const std::string& url
        entryNode = entryNode.next_sibling("entry")) {
     kiwix::Book book;
 
-    book.setReadOnly(false);
+    book.setReadOnly(readOnly);
     book.updateFromOpds(entryNode, urlHost);
 
     /* Update the book properties with the new importer */
@@ -179,7 +181,7 @@ bool Manager::readOpds(const std::string& content, const std::string& urlHost)
       = doc.load_buffer((void*)content.data(), content.size());
 
   if (result) {
-    this->parseOpdsDom(doc, urlHost);
+    this->parseOpdsDom(doc, urlHost, /*readOnly=*/false);
     return true;
   }
 
