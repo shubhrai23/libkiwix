@@ -149,12 +149,7 @@ TEST(ManagerTest, readOpdsWithoutSearchMetadata)
     EXPECT_EQ(lib->getBooksIds(), (kiwix::Library::BookIdCollection{"book1"}));
 }
 
-TEST(ManagerTest, readOpdsAddsEntriesAndParsesSearchMetadata)
-{
-    auto lib = kiwix::Library::create();
-    kiwix::Manager manager(lib);
-
-    const std::string feed = R"(
+const char sampleOpdsFeed[] = R"(
 <feed xmlns="http://www.w3.org/2005/Atom"
       xmlns:opds="https://specs.opds.io/opds-1.2">
   <totalResults>2</totalResults>
@@ -179,7 +174,26 @@ TEST(ManagerTest, readOpdsAddsEntriesAndParsesSearchMetadata)
 </feed>
 )";
 
-    EXPECT_TRUE(manager.readOpds(feed, "http://example.com"));
+TEST(ManagerTest, readOpdsHonorsReadOnlyTrue)
+{
+    // readOpds() defaults to readOnly=false (see
+    // ManagerTest.readOpdsAddsEntriesAndParsesSearchMetadata below, which
+    // covers that case) - this checks that readOnly=true is honored too.
+    auto lib = kiwix::Library::create();
+    kiwix::Manager manager(lib);
+
+    EXPECT_TRUE(manager.readOpds(sampleOpdsFeed, "http://example.com", /*readOnly=*/true));
+
+    EXPECT_TRUE(lib->getBookById("book1").readOnly());
+    EXPECT_TRUE(lib->getBookById("book2").readOnly());
+}
+
+TEST(ManagerTest, readOpdsAddsEntriesAndParsesSearchMetadata)
+{
+    auto lib = kiwix::Library::create();
+    kiwix::Manager manager(lib);
+
+    EXPECT_TRUE(manager.readOpds(sampleOpdsFeed, "http://example.com"));
 
     EXPECT_TRUE(manager.m_hasSearchResult);
     EXPECT_EQ(manager.m_totalBooks, 2U);
