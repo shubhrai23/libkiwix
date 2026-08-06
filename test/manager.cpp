@@ -31,10 +31,12 @@ TEST(ManagerTest, addBookFromPathAndGetIdTest)
 # define UNITTEST_ZIM_PATH "zimfiles\\unittest.zim"
 # define LIB_ABS_PATH  "C:\\data\\lib.xml"
 # define ZIM_ABS_PATH  "C:\\data\\zimfiles\\unittest.zim"
+# define TEST_LIBRARY_OPDS_PATH ".\\test\\library.opds"
 #else
 # define UNITTEST_ZIM_PATH "zimfiles/unittest.zim"
 # define LIB_ABS_PATH "/data/lib.xml"
 # define ZIM_ABS_PATH "/data/zimfiles/unittest.zim"
+# define TEST_LIBRARY_OPDS_PATH "./test/library.opds"
 #endif
 
 const char sampleLibraryXML[] = R"(
@@ -213,6 +215,33 @@ TEST(ManagerTest, readOpdsAddsEntriesAndParsesSearchMetadata)
     EXPECT_FALSE(book1.readOnly());
 }
 
+TEST(ManagerTest, readOpdsWithInvalidSelfPath)
+{
+    // With a rel="self" link that can't be opened as a ZIM, isPathValid()
+    // ends up false and the book keeps the title/metadata coming from the
+    // OPDS entry - unlike parseXmlDom()/trustLibrary=false, parseOpdsDom()
+    // never re-reads a ZIM's own metadata (mirrors
+    // ManagerTest.parseXmlDomWithTrustLibraryFalseAndInvalidPath above).
+    auto lib = kiwix::Library::create();
+    kiwix::Manager manager(lib);
+
+    const std::string feed = R"(
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <id>urn:uuid:book1</id>
+          <title>Book From OPDS</title>
+          <link rel="self" href="does-not-exist.zim" />
+        </entry>
+      </feed>
+    )";
+
+    EXPECT_TRUE(manager.readOpds(feed, "http://example.com", /*readOnly=*/false, /*libraryPath=*/"./test/lib.xml"));
+
+    kiwix::Book book = lib->getBookById("book1");
+    EXPECT_FALSE(book.isPathValid());
+    EXPECT_EQ(book.getTitle(), "Book From OPDS");
+}
+
 TEST(ManagerTest, readFileDetectsXmlFormat)
 {
     // readFile() sniffs the file content for a "<feed" substring to tell
@@ -245,7 +274,7 @@ TEST(ManagerTest, readFileDetectsOpdsFormat)
     auto lib = kiwix::Library::create();
     kiwix::Manager manager(lib);
 
-    EXPECT_TRUE(manager.readFile("./test/library.opds", /*readOnly=*/false));
+    EXPECT_TRUE(manager.readFile(TEST_LIBRARY_OPDS_PATH, /*readOnly=*/false));
 
     EXPECT_EQ(lib->getBooksIds(), (kiwix::Library::BookIdCollection{
           "charlesray",
@@ -260,7 +289,18 @@ TEST(ManagerTest, readFileDetectsOpdsFormat)
     // entry field-by-field, the same way ManagerTest.readXml does for its
     // XML-sourced equivalent.
     kiwix::Book book = lib->getBookById("raycharles");
-    EXPECT_EQ(book.getPath(), ""); // no path on OPDS
+
+    // Like XML's "path" attribute, the OPDS rel="self" link's href is
+    // resolved against the library file's own directory (readFile() passes
+    // its own `path` as parseOpdsDom()'s libraryPath) - library.opds's
+    // "./zimfile_raycharles.zim" self link resolves to the same file as
+    // library.xml's "path" attribute of the same value.
+
+    EXPECT_EQ(book.getPath(),
+            kiwix::computeAbsolutePath(kiwix::removeLastPathElement(TEST_LIBRARY_OPDS_PATH),
+                                        "./zimfile_raycharles.zim"));
+    EXPECT_TRUE(book.isPathValid());
+
     EXPECT_EQ(book.getUrl(), "https://github.com/kiwix/libkiwix/raw/master/test/data/zimfile_raycharles.zim");
     EXPECT_EQ(book.getTitle(), "Ray Charles");
     EXPECT_EQ(book.getDescription(), "Wikipedia articles about Ray Charles (not all of them but near to what an average newborn may find more than enough)");
