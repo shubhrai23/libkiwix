@@ -65,7 +65,14 @@ TEST(ManagerTest, readXml)
 
     EXPECT_EQ(true, manager.readXml(sampleLibraryXML, true, LIB_ABS_PATH, true));
     kiwix::Book book = lib->getBookById("0d0bcd57-d3f6-cb22-44cc-a723ccb4e1b2");
+
+    // "path" is relative in the XML - readXml() resolves it against the
+    // directory of LIB_ABS_PATH, yielding ZIM_ABS_PATH.
     EXPECT_EQ(ZIM_ABS_PATH, book.getPath());
+    // ... but ZIM_ABS_PATH doesn't exist on disk, so the resolved path is
+    // not considered valid.
+    EXPECT_FALSE(book.isPathValid());
+    EXPECT_TRUE(book.readOnly());
     EXPECT_EQ("https://example.com/zimfiles/unittest.zim", book.getUrl());
     EXPECT_EQ("Unit Test", book.getTitle());
     EXPECT_EQ("Wikipedia articles about unit testing", book.getDescription());
