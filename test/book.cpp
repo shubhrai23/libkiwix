@@ -309,6 +309,86 @@ TEST(BookTest, updateFromOPDSThumbnailWithNonNumericSizeParamTest)
     EXPECT_EQ(illustration->height, 64);
 }
 
+TEST(BookTest, updateFromOPDSMultipleThumbnailLinksTest)
+{
+    // Several rel="...thumbnail" links (e.g. one per size) must all be kept,
+    // not just the last one seen.
+    const kiwix::Book book = makeBookFromOpds(R"(
+        <link rel="http://opds-spec.org/image/thumbnail"
+              type="image/png;width=48;height=48"
+              href="/zara-48.png" />
+        <link rel="http://opds-spec.org/image/thumbnail"
+              type="image/png;width=96;height=96"
+              href="/zara-96.png" />
+    )");
+
+    const auto& illustrations = book.getIllustrations();
+    ASSERT_EQ(illustrations.size(), 2U);
+    EXPECT_EQ(illustrations[0]->url, "/zara-48.png");
+    EXPECT_EQ(illustrations[0]->width, 48);
+    EXPECT_EQ(illustrations[1]->url, "/zara-96.png");
+    EXPECT_EQ(illustrations[1]->width, 96);
+}
+
+TEST(BookTest, updateFromOPDSSingleBase64ThumbnailTest)
+{
+    const kiwix::Book book = makeBookFromOpds(R"(
+        <thumbnails>
+          <thumbnail>ZmFrZS1ib29rLWZhdmljb24tZGF0YQ==</thumbnail>
+        </thumbnails>
+    )");
+
+    const auto& illustrations = book.getIllustrations();
+    ASSERT_EQ(illustrations.size(), 1U);
+    EXPECT_EQ(illustrations[0]->getData(), "fake-book-favicon-data");
+}
+
+TEST(BookTest, updateFromOPDSMultipleBase64ThumbnailsTest)
+{
+    const kiwix::Book book = makeBookFromOpds(R"(
+        <thumbnails>
+          <thumbnail>Zmlyc3QtdGh1bWJuYWls</thumbnail>
+          <thumbnail>c2Vjb25kLXRodW1ibmFpbA==</thumbnail>
+        </thumbnails>
+    )");
+
+    const auto& illustrations = book.getIllustrations();
+    ASSERT_EQ(illustrations.size(), 2U);
+    EXPECT_EQ(illustrations[0]->getData(), "first-thumbnail");
+    EXPECT_EQ(illustrations[1]->getData(), "second-thumbnail");
+}
+
+TEST(BookTest, updateFromOPDSUrlAndBase64ThumbnailsTest)
+{
+    // Both kinds can be present on the same entry; both end up in
+    // getIllustrations(), the URL-based one still lazily fetching its data
+    // via its url, the base64 one already carrying its data directly.
+    const kiwix::Book book = makeBookFromOpds(R"(
+        <link rel="http://opds-spec.org/image/thumbnail"
+              type="image/png;width=96;height=96"
+              href="/zara-96.png" />
+        <thumbnails>
+          <thumbnail>ZmFrZS1ib29rLWZhdmljb24tZGF0YQ==</thumbnail>
+        </thumbnails>
+    )");
+
+    const auto& illustrations = book.getIllustrations();
+    ASSERT_EQ(illustrations.size(), 2U);
+    EXPECT_EQ(illustrations[0]->url, "/zara-96.png");
+    EXPECT_EQ(illustrations[0]->getData(), "");
+    EXPECT_EQ(illustrations[1]->url, "");
+    EXPECT_EQ(illustrations[1]->getData(), "fake-book-favicon-data");
+}
+
+TEST(BookTest, updateFromOPDSNoThumbnailsTest)
+{
+    const kiwix::Book book = makeBookFromOpds(R"(
+        <id>abcd</id>
+    )");
+
+    EXPECT_TRUE(book.getIllustrations().empty());
+}
+
 TEST(BookTest, setTagsDoesntAffectCategory)
 {
     kiwix::Book book;
