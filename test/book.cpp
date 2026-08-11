@@ -242,6 +242,73 @@ TEST(BookTest, updateFromOPDSCategoryHandlingTest)
   }
 }
 
+TEST(BookTest, updateFromOPDSThumbnailSizeParamsTest)
+{
+    // The thumbnail link's "type" attribute carries width/height as
+    // ';'-separated parameters after the base media type (see
+    // getOpdsTypeParam() in book.cpp). Width and height are deliberately
+    // different here to prove they're parsed independently rather than one
+    // being derived from the other.
+    const kiwix::Book book = makeBookFromOpds(R"(
+        <link rel="http://opds-spec.org/image/thumbnail"
+              type="image/png;width=96;height=64;scale=1"
+              href="/zara.png" />
+    )");
+
+    const auto illustration = book.getIllustrations().at(0);
+    EXPECT_EQ(illustration->mimeType, "image/png;width=96;height=64;scale=1");
+    EXPECT_EQ(illustration->width, 96);
+    EXPECT_EQ(illustration->height, 64);
+}
+
+TEST(BookTest, updateFromOPDSThumbnailWithoutSizeParamsKeepsDefaultDimensionsTest)
+{
+    // No width/height params in "type" (e.g. older feeds predating this
+    // convention) - the Illustration keeps its default 48x48 dimensions
+    // instead of ending up with some derived/garbage value.
+    const kiwix::Book book = makeBookFromOpds(R"(
+        <link rel="http://opds-spec.org/image/thumbnail"
+              type="image/png"
+              href="/zara.png" />
+    )");
+
+    const auto illustration = book.getIllustrations().at(0);
+    EXPECT_EQ(illustration->width, 48);
+    EXPECT_EQ(illustration->height, 48);
+}
+
+TEST(BookTest, updateFromOPDSThumbnailWithOnlyOneSizeParamTest)
+{
+    // Only "width" is present - "height" is not derived from it and falls
+    // back to the Illustration default instead.
+    const kiwix::Book book = makeBookFromOpds(R"(
+        <link rel="http://opds-spec.org/image/thumbnail"
+              type="image/png;width=96"
+              href="/zara.png" />
+    )");
+
+    const auto illustration = book.getIllustrations().at(0);
+    EXPECT_EQ(illustration->width, 96);
+    EXPECT_EQ(illustration->height, 48);
+}
+
+TEST(BookTest, updateFromOPDSThumbnailWithNonNumericSizeParamTest)
+{
+    // A non-numeric "width" value can't be extracted by getOpdsTypeParam()
+    // (istringstream extraction fails), so it's left alone rather than
+    // being set to 0 or some other garbage value - "height", parsed
+    // independently, is unaffected.
+    const kiwix::Book book = makeBookFromOpds(R"(
+        <link rel="http://opds-spec.org/image/thumbnail"
+              type="image/png;width=abc;height=64"
+              href="/zara.png" />
+    )");
+
+    const auto illustration = book.getIllustrations().at(0);
+    EXPECT_EQ(illustration->width, 48);
+    EXPECT_EQ(illustration->height, 64);
+}
+
 TEST(BookTest, setTagsDoesntAffectCategory)
 {
     kiwix::Book book;

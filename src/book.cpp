@@ -32,6 +32,36 @@
 #include <zim/item.h>
 #include <pugixml.hpp>
 
+#include <sstream>
+
+namespace
+{
+
+/**
+ * Looks up a "key=value" parameter (e.g. "width" in
+ * "image/png;width=48;height=48;scale=1") among the ';'-separated
+ * parameters following an OPDS thumbnail link's base media type.
+ *
+ * @return true and sets `value` if `paramName` is present, false otherwise.
+ */
+template <typename T>
+bool getOpdsTypeParam(const std::string& type, const std::string& paramName, T& value)
+{
+  const std::string needle = ";" + paramName + "=";
+  const auto pos = type.find(needle);
+  if (pos == std::string::npos) {
+    return false;
+  }
+  const auto valueStart = pos + needle.size();
+  const auto valueEnd = type.find(';', valueStart);
+  const std::string valueStr = type.substr(valueStart, valueEnd - valueStart);
+  std::istringstream iss(valueStr);
+  iss >> value;
+  return !iss.fail();
+}
+
+} // anonymous namespace
+
 namespace kiwix
 {
 /* Constructor */
@@ -187,7 +217,16 @@ void Book::updateFromOpds(const pugi::xml_node& node, const std::string& urlHost
       const auto favicon = std::make_shared<Illustration>();
       favicon->data.clear();
       favicon->url = urlHost + linkNode.attribute("href").value();
-      favicon->mimeType = linkNode.attribute("type").value();
+      const std::string type = linkNode.attribute("type").value();
+      favicon->mimeType = type;
+      uint16_t width;
+      if (getOpdsTypeParam(type, "width", width)) {
+        favicon->width = width;
+      }
+      uint16_t height;
+      if (getOpdsTypeParam(type, "height", height)) {
+        favicon->height = height;
+      }
       m_illustrations.assign(1, favicon);
     }
  }
